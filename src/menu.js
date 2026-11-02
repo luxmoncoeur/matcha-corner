@@ -1,4 +1,4 @@
-// Each `code` is the item's single letter in share links (/4u/ur2/Bea = 1 ube matcha, 2 revel bars, for Bea).
+// Each `code` is the item's single letter inside treat links (`ur2` = 1 ube matcha, 2 revel bars; see share.js).
 // Never change or reuse a code, or links people already sent will open the wrong thing.
 export const menu = [
   // Drinks
