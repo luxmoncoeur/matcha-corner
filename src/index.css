@@ -1,0 +1,487 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Soft matcha palette: PlopUI's blue ink becomes matcha green, on cream paper. */
+.page {
+  --plop-ink: #3E7D4F;
+  --plop-ink-text: #2B5A38;
+  --plop-ink-soft: #4F7A5A;
+  --plop-on-l: #2B5A38;
+  --plop-on-soft-l: #4F7A5A;
+  --plop-hatch-l: rgba(62, 125, 79, 0.35);
+  --plop-shadow: rgba(62, 125, 79, 0.18);
+  --plop-shadow-strong: rgba(62, 125, 79, 0.28);
+  --plop-on-fill-mint: #2B5A38;
+  --plop-on-fill-mustard: #2B5A38;
+  --plop-on-fill-periwinkle: #2B5A38;
+  --plop-on-fill-bubblegum: #2B5A38;
+  --plop-on-fill-plain: #3E7D4F;
+  --plop-placeholder: #6E8A74;
+  --plop-bg-l: #F3F1E0;
+  min-height: 100vh;
+}
+/* Nested papers (the notebook tray) set their own blue ink; keep them matcha too. */
+.page,
+.page [data-plop-surface] {
+  --plop-on-l: #2B5A38;
+  --plop-on-soft-l: #4F7A5A;
+  --plop-hatch-l: rgba(62, 125, 79, 0.35);
+  --plop-focus-l: #B83A68;
+  --plop-line-b-l: #CFE6D6;
+}
+.page {
+  padding: clamp(1.5rem, 4vw, 3.5rem) clamp(1rem, 4vw, 3rem) 3rem;
+  font-family: var(--plop-font-body);
+  font-size: 1.05rem;
+  line-height: 1.5;
+}
+
+.page > * {
+  max-width: 76rem;
+  margin-inline: auto;
+}
+
+/* Masthead */
+.masthead {
+  position: relative;
+  display: grid;
+  justify-items: start;
+  gap: 1.25rem;
+  padding-block: 1rem 2.5rem;
+}
+.lede {
+  max-width: 34rem;
+  margin: 0;
+  font-size: 1.2rem;
+}
+.masthead-doodle {
+  position: absolute;
+  top: 0;
+  left: min(31rem, 80vw);
+}
+.masthead-heart {
+  position: absolute;
+  top: 4.5rem;
+  left: min(35rem, 88vw);
+}
+
+/* Menu board + order tray */
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2.5rem;
+  align-items: start;
+}
+@media (min-width: 960px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr) 22rem;
+  }
+}
+
+.menu {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 1.75rem;
+  margin: 1.5rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.menu > li {
+  display: grid;
+}
+.menu > li > * {
+  height: 100%;
+}
+.drink-name {
+  margin: 0 0 0.35rem;
+  font-family: var(--plop-font-letter);
+  font-size: 1.45rem;
+  line-height: 1.1;
+}
+.drink-note {
+  margin: 0 0 1rem;
+}
+.drink-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.tray {
+  display: grid;
+  gap: 1.25rem;
+  padding: 1.5rem;
+  border-radius: var(--plop-radius-box);
+  box-shadow: 6px 7px 0 var(--plop-shadow-hatch, var(--plop-shadow));
+}
+@media (min-width: 960px) {
+  .tray {
+    position: sticky;
+    top: 1.5rem;
+    rotate: 0.6deg;
+  }
+}
+.tray-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.tray-head h2 {
+  margin: 0;
+}
+
+.lines {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.lines li {
+  display: grid;
+  grid-template-columns: 2rem 1fr auto auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px dashed var(--plop-line-a);
+}
+.qty {
+  font-family: var(--plop-font-letter);
+}
+
+.free-line {
+  color: var(--plop-berry);
+}
+
+.options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 0;
+  font-family: var(--plop-font-letter);
+  font-size: 1.3rem;
+}
+.total strong {
+  font-size: 2rem;
+}
+.place {
+  justify-self: center;
+  margin-top: 1rem;
+}
+
+/* A friend's shared order */
+.shared {
+  margin-bottom: 3.5rem;
+}
+.shared-body {
+  display: grid;
+  gap: 2rem;
+  align-items: center;
+  margin-top: 1.5rem;
+}
+@media (min-width: 800px) {
+  .shared-body {
+    grid-template-columns: 22rem 1fr;
+  }
+}
+.shared-actions,
+.share {
+  display: grid;
+  gap: 1rem;
+  justify-items: start;
+}
+.shared-actions p,
+.share p {
+  max-width: 30rem;
+  margin: 0;
+}
+.open-treat {
+  /* Room for the party buddy that peeks over the top. */
+  margin-top: 3.5rem;
+}
+.share-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+/* Order tracker */
+.tracker {
+  margin-top: 4rem;
+}
+.tracker-body {
+  display: grid;
+  gap: 2rem;
+  align-items: center;
+  margin-top: 1.5rem;
+}
+@media (min-width: 800px) {
+  .tracker-body {
+    grid-template-columns: 22rem 1fr;
+  }
+}
+.receipt {
+  margin: 0.5rem 0;
+  padding-left: 1.1rem;
+}
+.receipt-total {
+  margin: 0;
+  font-family: var(--plop-font-letter);
+  font-size: 1.4rem;
+}
+.progress {
+  display: grid;
+  gap: 1.5rem;
+}
+.barista {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  font-family: var(--plop-font-letter);
+  font-size: 1.4rem;
+}
+.barista p {
+  margin: 0;
+}
+
+/* Help whisk */
+.whisk {
+  display: grid;
+  gap: 0.75rem;
+  justify-items: start;
+  max-width: 26rem;
+}
+.whisk p {
+  margin: 0;
+}
+.whisk > :nth-child(2) {
+  justify-self: stretch;
+}
+
+/* After the order is ready: sip, fortune, share */
+.after {
+  display: grid;
+  gap: 2.5rem;
+  align-items: start;
+  margin-top: 3rem;
+}
+@media (min-width: 800px) {
+  .after {
+    grid-template-columns: 22rem 1fr;
+  }
+}
+.sip-card {
+  display: grid;
+  gap: 1rem;
+  justify-items: center;
+  text-align: center;
+}
+.sip-card p {
+  margin: 0;
+}
+.cup {
+  overflow: visible;
+}
+.cup-drink rect {
+  transition: y 0.5s var(--plop-ease-spring, ease), height 0.5s var(--plop-ease-spring, ease);
+}
+.cup-face {
+  transform-origin: 90px 100px;
+  animation: cup-bob 2.8s ease-in-out infinite;
+}
+@keyframes cup-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cup-face { animation: none; }
+}
+.note-text {
+  margin: 0;
+  font-family: var(--plop-font-letter);
+  font-size: 1.3rem;
+  line-height: 1.25;
+}
+.share h3 {
+  margin: 0;
+}
+
+/* Stamp card */
+.stamp-card {
+  display: grid;
+  gap: 0.6rem;
+  padding: 1rem;
+  border: 2.5px dashed var(--plop-line-a);
+  border-radius: var(--plop-radius-box);
+  background: var(--plop-paper);
+}
+.stamp-head {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--plop-font-letter);
+}
+.stamp-title {
+  font-size: 1.25rem;
+}
+.stamps {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.stamp {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  border: 2px solid var(--plop-mint);
+  border-radius: 50%;
+}
+.stamp.is-on {
+  background: #FDEEF1;
+  border-color: var(--plop-bubblegum);
+}
+.stamp-note {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+/* Menu tabs */
+.menu-tabs {
+  margin-top: 1rem;
+}
+
+/* Floating order bar on phones and tablets: the tray sits far below the menu there. */
+.cart-bar {
+  position: fixed;
+  z-index: 20;
+  right: 0.75rem;
+  bottom: calc(0.75rem + env(safe-area-inset-bottom));
+  left: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  max-width: 32rem;
+  margin-inline: auto;
+  padding: 0.6rem 0.75rem 0.6rem 1.1rem;
+  border: 3px solid var(--plop-ink);
+  border-radius: 999px;
+  background: var(--plop-paper);
+  box-shadow: 4px 5px 0 var(--plop-shadow-strong);
+  font-family: var(--plop-font-letter);
+}
+.page.has-bar {
+  padding-bottom: 6.5rem;
+}
+@media (min-width: 960px) {
+  .cart-bar {
+    display: none;
+  }
+  .page.has-bar {
+    padding-bottom: 3rem;
+  }
+}
+
+/* Phones */
+@media (max-width: 600px) {
+  .page {
+    font-size: 1rem;
+  }
+  .masthead {
+    padding-bottom: 1.5rem;
+  }
+  .lede {
+    font-size: 1.05rem;
+  }
+  .masthead-doodle {
+    top: -0.5rem;
+    right: 0;
+    left: auto;
+  }
+  .masthead-heart {
+    top: 3.5rem;
+    right: 0.5rem;
+    left: auto;
+  }
+  /* Two cards per row, like a food app. */
+  .menu {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem 0.75rem;
+  }
+  .drink-name {
+    font-size: 1.15rem;
+  }
+  .drink-note {
+    display: -webkit-box;
+    margin-bottom: 0.75rem;
+    overflow: hidden;
+    font-size: 0.88rem;
+    line-height: 1.35;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+  }
+  .menu-tabs [role='tabpanel'] {
+    padding-inline: 0.75rem;
+  }
+  .drink-foot {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+  .drink-foot .tags {
+    display: none;
+  }
+  .tray {
+    padding: 1.1rem;
+  }
+  .options {
+    grid-template-columns: 1fr;
+  }
+  .tracker {
+    margin-top: 3rem;
+  }
+  .after {
+    margin-top: 2rem;
+  }
+  .share-buttons {
+    gap: 0.75rem;
+  }
+}
+
+.foot {
+  margin-top: 5rem;
+  font-size: 0.9rem;
+  opacity: 0.8;
+}
