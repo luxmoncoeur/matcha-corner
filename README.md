@@ -2,7 +2,7 @@
 
 A tiny pretend café for matcha lovers. Pick drinks and snacks, help whisk, sip it up and get a fortune. Or send it as a treat: your friend gets a link that opens an order that's all theirs.
 
-No backend: a treat lives inside its link (`/4u/ur2/Bea/Nino` = 1 ube matcha and 2 revel bars, for Bea, from Nino), and the stamp card is saved in the browser.
+No backend: a treat lives inside its link as one scrambled code (`/4u/GBNGTllT...`), so the surprise and the note can't be read off the link. The stamp card is saved in the browser.
 
 ## Built with
 
