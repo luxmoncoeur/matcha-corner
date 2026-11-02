@@ -14,8 +14,10 @@ import {
   Progress,
   Radio,
   RadioGroup,
+  SoundIcon,
   StatusTimeline,
   StickyNote,
+  Switch,
   Tab,
   TabList,
   TabPanel,
@@ -25,6 +27,7 @@ import {
   TicketCard,
   WordSticker,
   toast,
+  useHaptics,
 } from '@plop-ui/react'
 import Cookie from './Cookie'
 import Cup from './Cup'
@@ -43,6 +46,7 @@ import {
   sweetness,
 } from './menu'
 import { MAX_QTY, clearSharedOrder, orderTotal, readSharedOrder, shareUrl } from './share'
+import { useSoundSetting } from './sound'
 import { useStampCard } from './stamps'
 
 const STEP_MS = 2600
@@ -133,6 +137,9 @@ export default function App() {
   const [fortune, setFortune] = useState(null)
   const [gift, setGift] = useState(() => readSharedOrder())
   const card = useStampCard()
+  const [sound, setSound] = useSoundSetting()
+  // App renders its own PlopProvider, so this reads the kit default: haptics on (phones only).
+  const haptics = useHaptics()
 
   const lines = Object.entries(cart).filter(([, qty]) => qty > 0)
   const items = countItems(lines)
@@ -159,7 +166,8 @@ export default function App() {
     if (!ready) return
     const message = order.kind === 'gift' ? 'Your treat is ready!' : `Order #${order.no} is ready at the counter`
     toast.success(message, { buddy: 'congrats', burst: true })
-  }, [ready, order])
+    haptics.success()
+  }, [ready, order, haptics])
 
   const add = (id) => {
     if ((cart[id] ?? 0) >= MAX_QTY) {
@@ -216,6 +224,7 @@ export default function App() {
     setWhisks(next)
     if (next >= WHISKS_NEEDED) {
       setStep(WHISKING + 1)
+      haptics.success()
       toast.success('So frothy! Thanks for the help.', { burst: true })
     }
   }
@@ -225,6 +234,7 @@ export default function App() {
     setBites(next)
     if (next < BITES) return
     setFortune(pickFortune())
+    haptics.success()
     const stamps = countItems(order.lines)
     const earned = card.addStamps(stamps)
     if (earned > 0) toast.success('Stamp card full! Your next drink is free.', { buddy: 'congrats', burst: true })
@@ -256,7 +266,7 @@ export default function App() {
   const sipWord = orderHasDrinks ? 'Sip' : 'Bite'
 
   return (
-    <PlopProvider surface="poster" theme="light" className={items > 0 ? 'page has-bar' : 'page'}>
+    <PlopProvider surface="poster" theme="light" sound={sound} className={items > 0 ? 'page has-bar' : 'page'}>
       <header className="masthead">
         <WordSticker tone="mint" size={72} tilt={-3} style={{ fontSize: 'clamp(40px, 11vw, 72px)' }}>
           Matcha corner
@@ -265,6 +275,9 @@ export default function App() {
           A tiny café for matcha lovers. Pick a drink and a little snack, help whisk, and get a fortune at the end. Or
           send it as a treat to your barkada.
         </p>
+        <Switch checked={sound} onCheckedChange={setSound} className="sound-switch">
+          <SoundIcon off={!sound} /> Plop sounds
+        </Switch>
         <Doodle kind="sparkle" tone="mustard" size={44} tilt={12} className="masthead-doodle" />
         <Doodle kind="heart" tone="bubblegum" size={34} tilt={-10} className="masthead-heart" />
       </header>
