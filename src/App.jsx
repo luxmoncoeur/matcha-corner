@@ -1,0 +1,588 @@
+import { useEffect, useState } from 'react'
+import {
+  Buddy,
+  Button,
+  CloseIcon,
+  CopyIcon,
+  Count,
+  Doodle,
+  EmptyState,
+  Heading,
+  IconButton,
+  LinkIcon,
+  PlopProvider,
+  Progress,
+  Radio,
+  RadioGroup,
+  StatusTimeline,
+  StickyNote,
+  Tab,
+  TabList,
+  TabPanel,
+  Tabs,
+  Tag,
+  TextField,
+  TicketCard,
+  WordSticker,
+  toast,
+} from '@plop-ui/react'
+import Cookie from './Cookie'
+import Cup from './Cup'
+import StampCard from './StampCard'
+import {
+  DEFAULT_MILK,
+  DEFAULT_SUGAR,
+  drinkSteps,
+  findItem,
+  fortunes,
+  isDrink,
+  menu,
+  milks,
+  peso,
+  snackSteps,
+  sweetness,
+} from './menu'
+import { MAX_QTY, clearSharedOrder, orderTotal, readSharedOrder, shareUrl } from './share'
+import { useStampCard } from './stamps'
+
+const STEP_MS = 2600
+// Whisking waits longer on its own, so helping out actually speeds things up.
+const WHISK_STEP_MS = 9000
+const WHISKS_NEEDED = 12
+const WHISKING = drinkSteps.indexOf('Whisking')
+const BITES = 5
+const tilts = [-1.5, 1, -0.5, 1.5, -1, 0.5]
+const drinks = menu.filter((d) => d.kind === 'drink')
+const snacks = menu.filter((d) => d.kind === 'snack')
+
+const nextOrderNo = () => 100 + Math.floor(Math.random() * 900)
+const pickFortune = () => fortunes[Math.floor(Math.random() * fortunes.length)]
+const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function'
+const countItems = (lines) => lines.reduce((sum, [, qty]) => sum + qty, 0)
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
+const hasDrinks = (lines) => lines.some(([id]) => isDrink(id))
+const stepsFor = (lines) => (hasDrinks(lines) ? drinkSteps : snackSteps)
+// Milk and sweetness only mean something when there's a drink in the order.
+const detailsOf = (order) => (hasDrinks(order.lines) ? [order.milk, order.sugar] : [])
+// Waits a frame so a section that is about to appear exists before we scroll to it.
+const scrollTo = (id) =>
+  requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' }))
+
+function Receipt({ order }) {
+  return (
+    <>
+      <ul className="receipt">
+        {order.lines.map(([id, qty]) => (
+          <li key={id}>
+            {qty}× {findItem(id).name}
+          </li>
+        ))}
+        {order.discount > 0 && <li>1 free drink from your stamp card (−{peso(order.discount)})</li>}
+      </ul>
+      {order.kind === 'gift' ? (
+        <p className="receipt-total">Paid by {order.name || 'a friend'} ♥</p>
+      ) : (
+        <p className="receipt-total">{peso(order.total)}</p>
+      )}
+    </>
+  )
+}
+
+function MenuGrid({ items, onAdd }) {
+  return (
+    <ul className="menu">
+      {items.map((item, i) => (
+        <li key={item.id}>
+          <StickyNote tone={item.paper} tilt={tilts[i % tilts.length]} footer={peso(item.price)}>
+            <h3 className="drink-name">{item.name}</h3>
+            <p className="drink-note">{item.note}</p>
+            <div className="drink-foot">
+              <div className="tags">
+                {item.tags.map((t) => (
+                  <Tag key={t.label} tone={t.tone} seed={item.id + t.label}>
+                    {t.label}
+                  </Tag>
+                ))}
+              </div>
+              <Button size="sm" variant="mint" burst="hearts" onClick={() => onAdd(item.id)}>
+                Add
+                <span className="sr-only"> {item.name}</span>
+              </Button>
+            </div>
+          </StickyNote>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+export default function App() {
+  const [cart, setCart] = useState({})
+  const [tab, setTab] = useState('drinks')
+  const [milk, setMilk] = useState(DEFAULT_MILK)
+  const [sugar, setSugar] = useState(DEFAULT_SUGAR)
+  const [name, setName] = useState('')
+  const [forFriend, setForFriend] = useState(false)
+  const [to, setTo] = useState('')
+  const [note, setNote] = useState('')
+  // kind: 'self' (my order), 'treat' (I'm sending it to a friend), 'gift' (a friend sent it to me)
+  const [order, setOrder] = useState(null)
+  const [step, setStep] = useState(0)
+  const [whisks, setWhisks] = useState(0)
+  const [bites, setBites] = useState(0)
+  const [fortune, setFortune] = useState(null)
+  const [gift, setGift] = useState(() => readSharedOrder())
+  const card = useStampCard()
+
+  const lines = Object.entries(cart).filter(([, qty]) => qty > 0)
+  const items = countItems(lines)
+  const cartHasDrinks = hasDrinks(lines)
+  const drinkPrices = lines.filter(([id]) => isDrink(id)).map(([id]) => findItem(id).price)
+  const discount = card.freeCups > 0 && drinkPrices.length > 0 ? Math.min(...drinkPrices) : 0
+  const total = orderTotal(lines) - discount
+
+  const atBar = order !== null && order.kind !== 'treat'
+  const steps = order ? stepsFor(order.lines) : drinkSteps
+  const orderHasDrinks = order !== null && hasDrinks(order.lines)
+  const ready = atBar && step === steps.length - 1
+  const finished = bites >= BITES
+
+  // Walk the order through the bar, one step at a time. Treats wait for the friend to open them.
+  useEffect(() => {
+    if (!atBar || step >= steps.length - 1) return
+    const wait = orderHasDrinks && step === WHISKING ? WHISK_STEP_MS : STEP_MS
+    const t = window.setTimeout(() => setStep((s) => s + 1), wait)
+    return () => window.clearTimeout(t)
+  }, [atBar, step, steps, orderHasDrinks])
+
+  useEffect(() => {
+    if (!ready) return
+    const message = order.kind === 'gift' ? 'Your treat is ready!' : `Order #${order.no} is ready at the counter`
+    toast.success(message, { buddy: 'congrats', burst: true })
+  }, [ready, order])
+
+  const add = (id) => {
+    if ((cart[id] ?? 0) >= MAX_QTY) {
+      toast(`That's the most we can make of one item (${MAX_QTY})`)
+      return
+    }
+    setCart((c) => ({ ...c, [id]: (c[id] ?? 0) + 1 }))
+  }
+  const remove = (id) => setCart((c) => ({ ...c, [id]: 0 }))
+
+  const startAtBar = (next) => {
+    setOrder(next)
+    setStep(0)
+    setWhisks(0)
+    setBites(0)
+    setFortune(null)
+  }
+
+  const placeOrder = () => {
+    if (discount > 0) card.redeemFreeCup()
+    const base = { no: nextOrderNo(), name: name.trim(), lines, milk, sugar, total, discount }
+    if (forFriend) {
+      startAtBar({ ...base, kind: 'treat', to: to.trim(), note: note.trim() })
+      toast.success(`Treat ready! Send the link to ${to.trim() || 'your friend'}.`, { burst: 'hearts' })
+    } else {
+      startAtBar({ ...base, kind: 'self' })
+      toast(cartHasDrinks ? 'Order placed. Whisking soon!' : 'Order placed. Warming it up!')
+    }
+    setCart({})
+    setNote('')
+    scrollTo('tracker-heading')
+  }
+
+  const openGift = () => {
+    startAtBar({ ...gift, kind: 'gift' })
+    setGift(null)
+    clearSharedOrder()
+    toast(`Yay! ${gift.name || 'Your friend'}'s treat is on its way.`)
+    scrollTo('tracker-heading')
+  }
+
+  const treatBack = () => {
+    setForFriend(true)
+    if (order.kind === 'gift') {
+      setTo(order.name)
+      setName(order.to)
+    }
+    setOrder(null)
+    scrollTo('menu-heading')
+  }
+
+  const whisk = () => {
+    const next = whisks + 1
+    setWhisks(next)
+    if (next >= WHISKS_NEEDED) {
+      setStep(WHISKING + 1)
+      toast.success('So frothy! Thanks for the help.', { burst: true })
+    }
+  }
+
+  const bite = () => {
+    const next = bites + 1
+    setBites(next)
+    if (next < BITES) return
+    setFortune(pickFortune())
+    const stamps = countItems(order.lines)
+    const earned = card.addStamps(stamps)
+    if (earned > 0) toast.success('Stamp card full! Your next drink is free.', { buddy: 'congrats', burst: true })
+    else toast(`+${plural(stamps, 'stamp')} on your card`)
+  }
+
+  const orderAnother = () => {
+    setOrder(null)
+    setStep(0)
+    scrollTo('menu-heading')
+  }
+
+  const link = () => shareUrl(order)
+
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(link())
+      toast.success('Link copied. Send it to your friend!')
+    } catch {
+      toast.error("Couldn't copy the link. Try the share button instead.")
+    }
+  }
+
+  const shareLink = () =>
+    navigator
+      .share({ title: 'Matcha corner', text: `A little treat for ${order.to || 'you'}!`, url: link() })
+      .catch(() => {})
+
+  const sipWord = orderHasDrinks ? 'Sip' : 'Bite'
+
+  return (
+    <PlopProvider surface="poster" theme="light" className={items > 0 ? 'page has-bar' : 'page'}>
+      <header className="masthead">
+        <WordSticker tone="mint" size={72} tilt={-3} style={{ fontSize: 'clamp(40px, 11vw, 72px)' }}>
+          Matcha corner
+        </WordSticker>
+        <p className="lede">
+          A tiny café for matcha lovers. Pick a drink and a little snack, help whisk, and get a fortune at the end. Or
+          send it as a treat to your barkada.
+        </p>
+        <Doodle kind="sparkle" tone="mustard" size={44} tilt={12} className="masthead-doodle" />
+        <Doodle kind="heart" tone="bubblegum" size={34} tilt={-10} className="masthead-heart" />
+      </header>
+
+      {gift && (
+        <section className="shared" aria-labelledby="shared-heading">
+          <Heading level={2} id="shared-heading">
+            {gift.to ? `Hi ${gift.to}!` : 'Hi!'} This order is for you
+          </Heading>
+          <div className="shared-body">
+            <TicketCard
+              title={`A treat from ${gift.name || 'a friend'}`}
+              meta={detailsOf(gift).join(' · ') || undefined}
+              stub="For you"
+              tilt={1}
+            >
+              <ul className="receipt">
+                {gift.lines.map(([id, qty]) => (
+                  <li key={id}>
+                    {qty}× {findItem(id).name}
+                  </li>
+                ))}
+              </ul>
+            </TicketCard>
+            <div className="shared-actions">
+              {gift.note && (
+                <StickyNote tone="pink" tilt={-2} footer={`— ${gift.name || 'your friend'}`}>
+                  <p className="note-text">{gift.note}</p>
+                </StickyNote>
+              )}
+              <p>{gift.name || 'Your friend'} already paid, so it's all yours. Open it to watch it get made.</p>
+              <Button
+                size="lg"
+                variant="mint"
+                buddy
+                buddyMood="congrats"
+                burst="hearts"
+                onClick={openGift}
+                className="open-treat"
+              >
+                Open my treat
+              </Button>
+            </div>
+          </div>
+        </section>
+      )}
+
+      <main className="layout">
+        <section aria-labelledby="menu-heading">
+          <Heading level={2} id="menu-heading">
+            Today's menu
+          </Heading>
+          <Tabs value={tab} onValueChange={setTab} className="menu-tabs">
+            <TabList label="Menu">
+              <Tab value="drinks">Drinks</Tab>
+              <Tab value="snacks">Snacks</Tab>
+            </TabList>
+            <TabPanel value="drinks">
+              <MenuGrid items={drinks} onAdd={add} />
+            </TabPanel>
+            <TabPanel value="snacks">
+              <MenuGrid items={snacks} onAdd={add} />
+            </TabPanel>
+          </Tabs>
+        </section>
+
+        <PlopProvider surface="notebook" toaster={false} className="tray" role="complementary" aria-labelledby="tray-heading">
+          <div className="tray-head">
+            <Heading level={2} id="tray-heading" scribble={false}>
+              Your order
+            </Heading>
+            {items > 0 && <Count label={plural(items, 'item')}>{items}</Count>}
+          </div>
+
+          {lines.length === 0 ? (
+            <EmptyState>Nothing here yet. Add a drink or a snack from the menu.</EmptyState>
+          ) : (
+            <>
+              <ul className="lines">
+                {lines.map(([id, qty]) => {
+                  const item = findItem(id)
+                  return (
+                    <li key={id}>
+                      <span className="qty">{qty}×</span>
+                      <span className="line-name">{item.name}</span>
+                      <span>{peso(qty * item.price)}</span>
+                      <IconButton
+                        icon={<CloseIcon />}
+                        label={`Remove ${item.name}`}
+                        size="sm"
+                        variant="plain"
+                        onClick={() => remove(id)}
+                      />
+                    </li>
+                  )
+                })}
+                {discount > 0 && (
+                  <li className="free-line">
+                    <span className="qty">♥</span>
+                    <span className="line-name">Free drink from your stamp card</span>
+                    <span>−{peso(discount)}</span>
+                  </li>
+                )}
+              </ul>
+
+              {cartHasDrinks && (
+                <div className="options">
+                  <RadioGroup legend="Milk" value={milk} onValueChange={setMilk}>
+                    {milks.map((m) => (
+                      <Radio key={m} value={m} dotColor="var(--plop-mint)">
+                        {m}
+                      </Radio>
+                    ))}
+                  </RadioGroup>
+                  <RadioGroup legend="Sweetness" value={sugar} onValueChange={setSugar}>
+                    {sweetness.map((s) => (
+                      <Radio key={s} value={s} dotColor="var(--plop-bubblegum)">
+                        {s}
+                      </Radio>
+                    ))}
+                  </RadioGroup>
+                </div>
+              )}
+
+              <RadioGroup
+                legend="Who's it for?"
+                value={forFriend ? 'friend' : 'me'}
+                onValueChange={(v) => setForFriend(v === 'friend')}
+              >
+                <Radio value="me" dotColor="var(--plop-mint)">
+                  For me
+                </Radio>
+                <Radio value="friend" dotColor="var(--plop-bubblegum)">
+                  A treat for a friend
+                </Radio>
+              </RadioGroup>
+
+              {forFriend ? (
+                <>
+                  <TextField label="Friend's name" value={to} maxLength={24} onChange={(e) => setTo(e.target.value)} />
+                  <TextField
+                    label="From"
+                    hint="Your name, so they know who it's from."
+                    value={name}
+                    maxLength={24}
+                    autoComplete="given-name"
+                    onChange={(e) => setName(e.target.value)}
+                  />
+                  <TextField
+                    label="Little note"
+                    hint="Optional. It shows on a sticky note."
+                    placeholder="Para sa'yo, enjoy!"
+                    value={note}
+                    maxLength={80}
+                    onChange={(e) => setNote(e.target.value)}
+                  />
+                </>
+              ) : (
+                <TextField
+                  label="Name on your order"
+                  hint="Optional."
+                  value={name}
+                  maxLength={24}
+                  autoComplete="given-name"
+                  onChange={(e) => setName(e.target.value)}
+                />
+              )}
+
+              <p className="total">
+                <span>Total</span>
+                <strong>{peso(total)}</strong>
+              </p>
+              <Button size="lg" variant="mint" buddy burst onClick={placeOrder} className="place">
+                {forFriend ? 'Send treat' : 'Place order'}
+              </Button>
+            </>
+          )}
+
+          <StampCard stamps={card.stamps} freeCups={card.freeCups} />
+        </PlopProvider>
+      </main>
+
+      {order?.kind === 'treat' && (
+        <section className="tracker" aria-labelledby="tracker-heading">
+          <Heading level={2} id="tracker-heading">
+            Your treat for {order.to || 'your friend'} is ready to send!
+          </Heading>
+          <div className="tracker-body">
+            <TicketCard
+              title={`For ${order.to || 'a friend'}`}
+              meta={[order.name && `From ${order.name}`, ...detailsOf(order)].filter(Boolean).join(' · ')}
+              stub="Treat"
+              tilt={-1}
+            >
+              <Receipt order={order} />
+            </TicketCard>
+            <div className="share">
+              {order.note && (
+                <StickyNote tone="pink" tilt={-2} footer={`— ${order.name || 'you'}`}>
+                  <p className="note-text">{order.note}</p>
+                </StickyNote>
+              )}
+              <p>
+                Send this link to {order.to || 'your friend'}. When they open it, the order is theirs: they watch it get
+                made, help out, and get a fortune at the end.
+              </p>
+              <div className="share-buttons">
+                <Button variant="mint" iconLeft={<CopyIcon />} burst="hearts" onClick={copyLink}>
+                  Copy link
+                </Button>
+                {canShare && (
+                  <Button variant="periwinkle" iconLeft={<LinkIcon />} onClick={shareLink}>
+                    Share
+                  </Button>
+                )}
+                <Button variant="plain" onClick={orderAnother}>
+                  Order another
+                </Button>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {atBar && (
+        <section className="tracker" aria-labelledby="tracker-heading">
+          <Heading level={2} id="tracker-heading">
+            {ready ? "Here's your order!" : 'At the counter'}
+          </Heading>
+          <div className="tracker-body">
+            <TicketCard
+              title={order.kind === 'gift' ? `A treat from ${order.name || 'a friend'}` : `Order #${order.no}`}
+              meta={[order.kind === 'gift' ? order.to : order.name, ...detailsOf(order)].filter(Boolean).join(' · ')}
+              stub={ready ? 'Ready' : steps[step]}
+              tilt={-1}
+            >
+              <Receipt order={order} />
+            </TicketCard>
+
+            <div className="progress">
+              <StatusTimeline steps={[...steps]} current={ready ? steps.length : step} label="Order progress" />
+              <div className="barista" aria-live="polite">
+                <Buddy mood={ready ? 'congrats' : 'thinking'} size="md" />
+                <p>{ready ? 'Enjoy! Kain na.' : `${steps[step]}…`}</p>
+              </div>
+              {orderHasDrinks && step === WHISKING && (
+                <div className="whisk">
+                  <p>The barista could use a hand. Tap to whisk!</p>
+                  <Progress
+                    label="Froth"
+                    value={whisks}
+                    max={WHISKS_NEEDED}
+                    valueText={`${whisks} of ${WHISKS_NEEDED} whisks`}
+                    tone="mint"
+                  />
+                  <Button variant="mustard" onClick={whisk}>
+                    Whisk!
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {ready && (
+            <div className="after">
+              <div className="sip-card">
+                {orderHasDrinks ? <Cup level={1 - bites / BITES} /> : <Cookie left={1 - bites / BITES} />}
+                {finished ? (
+                  <StickyNote tone="mint" tilt={1.5} footer="Your matcha fortune">
+                    <p className="note-text">{fortune}</p>
+                  </StickyNote>
+                ) : (
+                  <>
+                    <p>Tap to {sipWord.toLowerCase()}. Finish it to get a fortune and a stamp.</p>
+                    <Button variant="periwinkle" burst="hearts" onClick={bite}>
+                      {sipWord} ({BITES - bites} left)
+                    </Button>
+                  </>
+                )}
+              </div>
+
+              {finished && (
+                <div className="share">
+                  <Heading level={3} scribble={false}>
+                    {order.kind === 'gift' ? 'Pay it back?' : 'Share the love?'}
+                  </Heading>
+                  <p>
+                    {order.kind === 'gift'
+                      ? `Send ${order.name || 'your friend'} a treat back. They'll get their own link to open.`
+                      : 'Treat a friend. They get a link that opens their very own order.'}
+                  </p>
+                  <div className="share-buttons">
+                    <Button variant="mint" burst="hearts" onClick={treatBack}>
+                      {order.kind === 'gift' ? `Treat ${order.name || 'them'} back` : 'Treat a friend'}
+                    </Button>
+                    <Button variant="plain" onClick={orderAnother}>
+                      Order another
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+      )}
+
+      <footer className="foot">Matcha corner is a pretend café made with love and PlopUI. No real orders are placed.</footer>
+
+      {items > 0 && (
+        <div className="cart-bar">
+          <span className="cart-bar-text">
+            <strong>{plural(items, 'item')}</strong> · {peso(total)}
+          </span>
+          <Button size="sm" variant="mint" onClick={() => scrollTo('tray-heading')}>
+            View order
+          </Button>
+        </div>
+      )}
+    </PlopProvider>
+  )
+}
