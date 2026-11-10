@@ -433,6 +433,16 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .cup-face { animation: none; }
 }
+/* The friend's note and the fortune: one square notepad sheet, whatever the length of the text.
+   Text is capped (80 characters), so it always fits; if it ever didn't, the sheet grows instead of clipping. */
+.paper-note {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  width: min(17rem, 100%);
+  aspect-ratio: 1;
+  text-align: center;
+}
 .note-text {
   margin: 0;
   font-family: var(--plop-font-letter);

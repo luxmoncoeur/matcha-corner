@@ -178,16 +178,18 @@ export default function App() {
   const atBar = order !== null && order.kind !== 'treat'
   const steps = order ? stepsFor(order.lines) : drinkSteps
   const orderHasDrinks = order !== null && hasDrinks(order.lines)
+  // A treat is a gift, so the friend doesn't have to work for it: the barista whisks it on their own.
+  const canHelpWhisk = orderHasDrinks && order.kind !== 'gift'
   const ready = atBar && step === steps.length - 1
   const finished = bites >= BITES
 
   // Walk the order through the bar, one step at a time. Treats wait for the friend to open them.
   useEffect(() => {
     if (!atBar || step >= steps.length - 1) return
-    const wait = orderHasDrinks && step === WHISKING ? WHISK_STEP_MS : STEP_MS
+    const wait = canHelpWhisk && step === WHISKING ? WHISK_STEP_MS : STEP_MS
     const t = window.setTimeout(() => setStep((s) => s + 1), wait)
     return () => window.clearTimeout(t)
-  }, [atBar, step, steps, orderHasDrinks])
+  }, [atBar, step, steps, canHelpWhisk])
 
   useEffect(() => {
     if (!ready) return
@@ -343,7 +345,7 @@ export default function App() {
             </TicketCard>
             <div className="shared-actions">
               {gift.note && (
-                <StickyNote tone="pink" tilt={-2} footer={`— ${gift.name || 'your friend'}`}>
+                <StickyNote tone="pink" tilt={-2} className="paper-note" footer={`— ${gift.name || 'your friend'}`}>
                   <p className="note-text">{gift.note}</p>
                 </StickyNote>
               )}
@@ -548,13 +550,13 @@ export default function App() {
             </TicketCard>
             <div className="share">
               {order.note && (
-                <StickyNote tone="pink" tilt={-2} footer={`— ${order.name || 'you'}`}>
+                <StickyNote tone="pink" tilt={-2} className="paper-note" footer={`— ${order.name || 'you'}`}>
                   <p className="note-text">{order.note}</p>
                 </StickyNote>
               )}
               <p>
                 Send this link to {order.to || 'your friend'}. When they open it, the order is theirs: they watch it get
-                made, help out, and get a fortune at the end.
+                made live and get a fortune at the end. No work on their side.
               </p>
               <div className="share-buttons">
                 <Button variant="mint" iconLeft={<CopyIcon />} burst="hearts" onClick={copyLink}>
@@ -595,7 +597,7 @@ export default function App() {
                 <Buddy mood={ready ? 'congrats' : 'thinking'} size="md" />
                 <p>{ready ? 'Enjoy! Kain na.' : `${steps[step]}…`}</p>
               </div>
-              {orderHasDrinks && step === WHISKING && (
+              {canHelpWhisk && step === WHISKING && (
                 <div className="whisk">
                   <p>The barista could use a hand. Tap to whisk!</p>
                   <Progress
@@ -618,7 +620,7 @@ export default function App() {
               <div className="sip-card">
                 {orderHasDrinks ? <Cup level={1 - bites / BITES} /> : <Cookie left={1 - bites / BITES} />}
                 {finished ? (
-                  <StickyNote tone="mint" tilt={1.5} footer="Your matcha fortune">
+                  <StickyNote tone="mint" tilt={1.5} className="paper-note" footer="Your matcha fortune">
                     <p className="note-text">{fortune}</p>
                   </StickyNote>
                 ) : (
