@@ -17,7 +17,7 @@ export const menu = [
     code: 's',
     kind: 'drink',
     name: 'Strawberry matcha',
-    note: 'Crushed strawberry jam at the bottom, matcha on top.',
+    note: 'Strawberry jam at the bottom, cold milk, matcha on top.',
     price: 170,
     paper: 'pink',
     tags: [{ label: 'Iced', tone: 'periwinkle' }],
@@ -27,7 +27,7 @@ export const menu = [
     code: 'u',
     kind: 'drink',
     name: 'Ube matcha',
-    note: 'Ube halaya milk under a layer of matcha.',
+    note: 'Ube halaya stirred into milk, under a layer of matcha.',
     price: 170,
     paper: 'pink',
     tags: [{ label: 'Iced', tone: 'periwinkle' }],
@@ -37,7 +37,8 @@ export const menu = [
     code: 'm',
     kind: 'drink',
     name: 'Matcha cloud',
-    note: 'Sweet cream cold foam floating on straight matcha.',
+    milks: [],
+    note: 'Straight matcha, no milk, with sweet cream cold foam on top.',
     price: 175,
     paper: 'mint',
     tags: [{ label: 'New', tone: 'tomato' }],
@@ -57,7 +58,7 @@ export const menu = [
     code: 'f',
     kind: 'drink',
     name: 'Biscoff matcha',
-    note: 'Cookie butter swirled through, crumbs on top.',
+    note: 'Matcha latte with cookie butter swirled through, crumbs on top.',
     price: 185,
     paper: 'mustard',
     tags: [{ label: 'Sweet tooth', tone: 'bubblegum' }],
@@ -67,6 +68,7 @@ export const menu = [
     code: 'k',
     kind: 'drink',
     name: 'Coconut matcha',
+    milks: ['Coconut milk'],
     note: 'Creamy coconut milk and matcha. Dairy-free.',
     price: 175,
     paper: 'mint',
@@ -87,7 +89,7 @@ export const menu = [
     code: 'h',
     kind: 'drink',
     name: 'Hojicha latte',
-    note: 'Roasted green tea. Toasty, nutty, low in caffeine.',
+    note: 'Roasted green tea with milk. Toasty, nutty, low in caffeine.',
     price: 155,
     paper: 'mustard',
     tags: [{ label: 'Low caffeine', tone: 'ink' }],
@@ -97,7 +99,7 @@ export const menu = [
     code: 'b',
     kind: 'drink',
     name: 'Choco banana frappe',
-    note: 'Blended banana, dark chocolate and a cloud of cream.',
+    note: 'Banana, dark chocolate and milk blended icy, with a cloud of cream.',
     price: 165,
     paper: 'pink',
     tags: [{ label: 'No matcha', tone: 'mustard' }],
@@ -189,10 +191,35 @@ export const menu = [
 export const findItem = (id) => menu.find((d) => d.id === id)
 export const isDrink = (id) => findItem(id)?.kind === 'drink'
 
-export const milks = ['Fresh milk', 'Oat milk', 'Soy milk']
+// Treat links store options by their index in these lists, so only ever add to the end.
+export const milks = ['Fresh milk', 'Oat milk', 'Soy milk', 'Coconut milk']
 export const sweetness = ['No sugar', 'Less sweet', 'Regular']
-export const DEFAULT_MILK = milks[0]
+export const sizes = [
+  { name: 'Regular', extra: 0 },
+  { name: 'Large', extra: 35 },
+]
 export const DEFAULT_SUGAR = sweetness[1]
+export const DEFAULT_SIZE = sizes[0].name
+
+// The milks a drink can be made with. Most take any of the first three; some have their own, or none.
+// An item with no `milks` list gets the usual choice.
+const USUAL_MILKS = milks.slice(0, 3)
+export const milksFor = (id) => (isDrink(id) ? (findItem(id).milks ?? USUAL_MILKS) : [])
+
+// What a new cart line starts as. Snacks have no options.
+export const defaultOptions = (id) =>
+  isDrink(id) ? { milk: milksFor(id)[0] ?? null, sugar: DEFAULT_SUGAR, size: DEFAULT_SIZE } : {}
+
+const sizeExtra = (size) => sizes.find((s) => s.name === size)?.extra ?? 0
+export const unitPrice = (line) => findItem(line.id).price + sizeExtra(line.size)
+export const linePrice = (line) => unitPrice(line) * line.qty
+
+// "Oat milk · Less sweet · Large", leaving out what goes without saying (regular size).
+export const describeLine = (line) =>
+  [line.milk, line.sugar, line.size && line.size !== DEFAULT_SIZE ? line.size : null].filter(Boolean).join(' · ')
+
+// Two lines with the same item and options are the same thing, so they merge.
+export const lineKey = (line) => [line.id, line.milk, line.sugar, line.size].join('|')
 
 // Snack-only orders skip the whisk.
 export const drinkSteps = ['Ordered', 'Whisking', 'Pouring', 'Ready']

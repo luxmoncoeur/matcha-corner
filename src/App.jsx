@@ -14,6 +14,7 @@ import {
   Progress,
   Radio,
   RadioGroup,
+  Select,
   SoundIcon,
   StatusTimeline,
   StickyNote,
@@ -31,19 +32,24 @@ import {
 } from '@plop-ui/react'
 import Cookie from './Cookie'
 import Cup from './Cup'
+import Customize from './Customize'
 import StampCard from './StampCard'
 import {
-  DEFAULT_MILK,
-  DEFAULT_SUGAR,
+  defaultOptions,
+  describeLine,
   drinkSteps,
   findItem,
   fortunes,
   isDrink,
+  lineKey,
+  linePrice,
   menu,
-  milks,
+  milksFor,
   peso,
+  sizes,
   snackSteps,
   sweetness,
+  unitPrice,
 } from './menu'
 import { MAX_QTY, clearSharedOrder, orderTotal, readSharedOrder, shareUrl } from './share'
 import { useSoundSetting } from './sound'
@@ -62,27 +68,45 @@ const snacks = menu.filter((d) => d.kind === 'snack')
 const nextOrderNo = () => 100 + Math.floor(Math.random() * 900)
 const pickFortune = () => fortunes[Math.floor(Math.random() * fortunes.length)]
 const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function'
-const countItems = (lines) => lines.reduce((sum, [, qty]) => sum + qty, 0)
+const countItems = (lines) => lines.reduce((sum, line) => sum + line.qty, 0)
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
-const hasDrinks = (lines) => lines.some(([id]) => isDrink(id))
+const hasDrinks = (lines) => lines.some((line) => isDrink(line.id))
 const stepsFor = (lines) => (hasDrinks(lines) ? drinkSteps : snackSteps)
-// Milk and sweetness only mean something when there's a drink in the order.
-const detailsOf = (order) => (hasDrinks(order.lines) ? [order.milk, order.sugar] : [])
+// Cart lines get a `uid` so React can track them while their options change.
+let nextUid = 1
+const newLine = (id, qty, options) => ({ uid: nextUid++, id, qty, ...options })
+// Lines that ended up the same (e.g. split off, then changed back) become one before the order goes out.
+const mergeLines = (lines) =>
+  lines.reduce((out, line) => {
+    const same = out.find((l) => lineKey(l) === lineKey(line))
+    if (same) same.qty += line.qty
+    else out.push({ ...line })
+    return out
+  }, [])
+const sizeOptions = sizes.map((s) => ({ value: s.name, label: s.extra ? `${s.name} +${peso(s.extra)}` : s.name }))
+const sugarOptions = sweetness.map((s) => ({ value: s, label: s }))
 // Waits a frame so a section that is about to appear exists before we scroll to it.
 const scrollTo = (id) =>
   requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' }))
 
+function ReceiptLines({ lines }) {
+  return (
+    <ul className="receipt">
+      {lines.map((line) => (
+        <li key={lineKey(line)}>
+          {line.qty}× {findItem(line.id).name}
+          {describeLine(line) && <span className="receipt-detail">{describeLine(line)}</span>}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 function Receipt({ order }) {
   return (
     <>
-      <ul className="receipt">
-        {order.lines.map(([id, qty]) => (
-          <li key={id}>
-            {qty}× {findItem(id).name}
-          </li>
-        ))}
-        {order.discount > 0 && <li>1 free drink from your stamp card (−{peso(order.discount)})</li>}
-      </ul>
+      <ReceiptLines lines={order.lines} />
+      {order.discount > 0 && <p className="receipt-free">1 free drink from your stamp card (−{peso(order.discount)})</p>}
       {order.kind === 'gift' ? (
         <p className="receipt-total">Paid by {order.name || 'a friend'} ♥</p>
       ) : (
@@ -121,10 +145,12 @@ function MenuGrid({ items, onAdd }) {
 }
 
 export default function App() {
-  const [cart, setCart] = useState({})
+  const [cart, setCart] = useState([])
+  // The cart line whose options are open for changing (one at a time keeps the tray short).
+  const [editing, setEditing] = useState(null)
+  // The drink being customized in the overlay, before it goes in the cart.
+  const [customizing, setCustomizing] = useState(null)
   const [tab, setTab] = useState('drinks')
-  const [milk, setMilk] = useState(DEFAULT_MILK)
-  const [sugar, setSugar] = useState(DEFAULT_SUGAR)
   const [name, setName] = useState('')
   const [forFriend, setForFriend] = useState(false)
   const [to, setTo] = useState('')
@@ -141,10 +167,11 @@ export default function App() {
   // App renders its own PlopProvider, so this reads the kit default: haptics on (phones only).
   const haptics = useHaptics()
 
-  const lines = Object.entries(cart).filter(([, qty]) => qty > 0)
+  const lines = cart
   const items = countItems(lines)
   const cartHasDrinks = hasDrinks(lines)
-  const drinkPrices = lines.filter(([id]) => isDrink(id)).map(([id]) => findItem(id).price)
+  // The free cup covers the cheapest drink in the cart, size included.
+  const drinkPrices = lines.filter((line) => isDrink(line.id)).map(unitPrice)
   const discount = card.freeCups > 0 && drinkPrices.length > 0 ? Math.min(...drinkPrices) : 0
   const total = orderTotal(lines) - discount
 
@@ -169,14 +196,37 @@ export default function App() {
     haptics.success()
   }, [ready, order, haptics])
 
-  const add = (id) => {
-    if ((cart[id] ?? 0) >= MAX_QTY) {
-      toast(`That's the most we can make of one item (${MAX_QTY})`)
-      return
-    }
-    setCart((c) => ({ ...c, [id]: (c[id] ?? 0) + 1 }))
+  const atMax = (id) => {
+    if (countItems(cart.filter((line) => line.id === id)) < MAX_QTY) return false
+    toast(`That's the most we can make of one item (${MAX_QTY})`)
+    return true
   }
-  const remove = (id) => setCart((c) => ({ ...c, [id]: 0 }))
+
+  // One more on the line with exactly these options, or a new line for them.
+  const add = (id, options = defaultOptions(id)) => {
+    if (atMax(id)) return
+    const key = lineKey({ id, ...options })
+    setCart((c) => {
+      const at = c.findIndex((line) => lineKey(line) === key)
+      return at === -1
+        ? [...c, newLine(id, 1, options)]
+        : c.map((line, i) => (i === at ? { ...line, qty: line.qty + 1 } : line))
+    })
+  }
+
+  // Drinks open the customize overlay first; snacks have nothing to pick, so they go straight in.
+  const pick = (id) => {
+    if (!isDrink(id)) return add(id)
+    if (!atMax(id)) setCustomizing(id)
+  }
+  const addCustomized = (id, options) => {
+    add(id, options)
+    setCustomizing(null)
+    haptics.success()
+    toast.success(`${findItem(id).name} added`)
+  }
+  const remove = (uid) => setCart((c) => c.filter((line) => line.uid !== uid))
+  const change = (uid, patch) => setCart((c) => c.map((line) => (line.uid === uid ? { ...line, ...patch } : line)))
 
   const startAtBar = (next) => {
     setOrder(next)
@@ -188,7 +238,7 @@ export default function App() {
 
   const placeOrder = () => {
     if (discount > 0) card.redeemFreeCup()
-    const base = { no: nextOrderNo(), name: name.trim(), lines, milk, sugar, total, discount }
+    const base = { no: nextOrderNo(), name: name.trim(), lines: mergeLines(lines), total, discount }
     if (forFriend) {
       startAtBar({ ...base, kind: 'treat', to: to.trim(), note: note.trim() })
       toast.success(`Treat ready! Send the link to ${to.trim() || 'your friend'}.`, { burst: 'hearts' })
@@ -196,7 +246,7 @@ export default function App() {
       startAtBar({ ...base, kind: 'self' })
       toast(cartHasDrinks ? 'Order placed. Whisking soon!' : 'Order placed. Warming it up!')
     }
-    setCart({})
+    setCart([])
     setNote('')
     scrollTo('tracker-heading')
   }
@@ -288,19 +338,8 @@ export default function App() {
             {gift.to ? `Hi ${gift.to}!` : 'Hi!'} This order is for you
           </Heading>
           <div className="shared-body">
-            <TicketCard
-              title={`A treat from ${gift.name || 'a friend'}`}
-              meta={detailsOf(gift).join(' · ') || undefined}
-              stub="For you"
-              tilt={1}
-            >
-              <ul className="receipt">
-                {gift.lines.map(([id, qty]) => (
-                  <li key={id}>
-                    {qty}× {findItem(id).name}
-                  </li>
-                ))}
-              </ul>
+            <TicketCard title={`A treat from ${gift.name || 'a friend'}`} stub="For you" tilt={1}>
+              <ReceiptLines lines={gift.lines} />
             </TicketCard>
             <div className="shared-actions">
               {gift.note && (
@@ -336,10 +375,10 @@ export default function App() {
               <Tab value="snacks">Snacks</Tab>
             </TabList>
             <TabPanel value="drinks">
-              <MenuGrid items={drinks} onAdd={add} />
+              <MenuGrid items={drinks} onAdd={pick} />
             </TabPanel>
             <TabPanel value="snacks">
-              <MenuGrid items={snacks} onAdd={add} />
+              <MenuGrid items={snacks} onAdd={pick} />
             </TabPanel>
           </Tabs>
         </section>
@@ -357,50 +396,83 @@ export default function App() {
           ) : (
             <>
               <ul className="lines">
-                {lines.map(([id, qty]) => {
-                  const item = findItem(id)
+                {lines.map((line) => {
+                  const item = findItem(line.id)
+                  const choices = milksFor(line.id)
                   return (
-                    <li key={id}>
-                      <span className="qty">{qty}×</span>
-                      <span className="line-name">{item.name}</span>
-                      <span>{peso(qty * item.price)}</span>
-                      <IconButton
-                        icon={<CloseIcon />}
-                        label={`Remove ${item.name}`}
-                        size="sm"
-                        variant="plain"
-                        onClick={() => remove(id)}
-                      />
+                    <li key={line.uid}>
+                      <div className="line-row">
+                        <span className="qty">{line.qty}×</span>
+                        <span className="line-name">{item.name}</span>
+                        <span>{peso(linePrice(line))}</span>
+                        <IconButton
+                          icon={<CloseIcon />}
+                          label={`Remove ${item.name}`}
+                          size="sm"
+                          variant="plain"
+                          onClick={() => remove(line.uid)}
+                        />
+                      </div>
+                      {isDrink(line.id) && (
+                        <div className="line-summary">
+                          <span>
+                            {describeLine(line)}
+                            {choices.length === 0 && ' · no milk'}
+                          </span>
+                          <Button
+                            size="sm"
+                            variant="plain"
+                            aria-expanded={editing === line.uid}
+                            aria-controls={`options-${line.uid}`}
+                            onClick={() => setEditing(editing === line.uid ? null : line.uid)}
+                          >
+                            {editing === line.uid ? 'Done' : 'Change'}
+                            <span className="sr-only"> {item.name}</span>
+                          </Button>
+                        </div>
+                      )}
+                      {isDrink(line.id) && editing === line.uid && (
+                        <div className="line-options" id={`options-${line.uid}`}>
+                          {choices.length > 1 && (
+                            <Select
+                              label="Milk"
+                              size="sm"
+                              options={choices.map((m) => ({ value: m, label: m }))}
+                              value={line.milk}
+                              onValueChange={(milk) => change(line.uid, { milk })}
+                            />
+                          )}
+                          <Select
+                            label="Sweetness"
+                            size="sm"
+                            options={sugarOptions}
+                            value={line.sugar}
+                            onValueChange={(sugar) => change(line.uid, { sugar })}
+                          />
+                          <Select
+                            label="Size"
+                            size="sm"
+                            options={sizeOptions}
+                            value={line.size}
+                            onValueChange={(size) => change(line.uid, { size })}
+                          />
+                          {choices.length === 1 && <p className="line-fixed">Always made with {choices[0].toLowerCase()}.</p>}
+                          {choices.length === 0 && <p className="line-fixed">Made without milk.</p>}
+                        </div>
+                      )}
                     </li>
                   )
                 })}
                 {discount > 0 && (
                   <li className="free-line">
-                    <span className="qty">♥</span>
-                    <span className="line-name">Free drink from your stamp card</span>
-                    <span>−{peso(discount)}</span>
+                    <div className="line-row">
+                      <span className="qty">♥</span>
+                      <span className="line-name">Free drink from your stamp card</span>
+                      <span>−{peso(discount)}</span>
+                    </div>
                   </li>
                 )}
               </ul>
-
-              {cartHasDrinks && (
-                <div className="options">
-                  <RadioGroup legend="Milk" value={milk} onValueChange={setMilk}>
-                    {milks.map((m) => (
-                      <Radio key={m} value={m} dotColor="var(--plop-mint)">
-                        {m}
-                      </Radio>
-                    ))}
-                  </RadioGroup>
-                  <RadioGroup legend="Sweetness" value={sugar} onValueChange={setSugar}>
-                    {sweetness.map((s) => (
-                      <Radio key={s} value={s} dotColor="var(--plop-bubblegum)">
-                        {s}
-                      </Radio>
-                    ))}
-                  </RadioGroup>
-                </div>
-              )}
 
               <RadioGroup
                 legend="Who's it for?"
@@ -468,7 +540,7 @@ export default function App() {
           <div className="tracker-body">
             <TicketCard
               title={`For ${order.to || 'a friend'}`}
-              meta={[order.name && `From ${order.name}`, ...detailsOf(order)].filter(Boolean).join(' · ')}
+              meta={order.name ? `From ${order.name}` : undefined}
               stub="Treat"
               tilt={-1}
             >
@@ -510,7 +582,7 @@ export default function App() {
           <div className="tracker-body">
             <TicketCard
               title={order.kind === 'gift' ? `A treat from ${order.name || 'a friend'}` : `Order #${order.no}`}
-              meta={[order.kind === 'gift' ? order.to : order.name, ...detailsOf(order)].filter(Boolean).join(' · ')}
+              meta={(order.kind === 'gift' ? order.to : order.name) || undefined}
               stub={ready ? 'Ready' : steps[step]}
               tilt={-1}
             >
@@ -583,6 +655,8 @@ export default function App() {
           )}
         </section>
       )}
+
+      {customizing && <Customize id={customizing} onAdd={addCustomized} onClose={() => setCustomizing(null)} />}
 
       <footer className="foot">Matcha corner is a pretend café made with love and PlopUI. No real orders are placed.</footer>
 

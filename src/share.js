@@ -1,17 +1,22 @@
-import { DEFAULT_MILK, DEFAULT_SUGAR, menu, milks, sweetness } from './menu'
+import { defaultOptions, isDrink, lineKey, linePrice, menu, milks, milksFor, sizes, sweetness } from './menu'
 
 export const MAX_QTY = 20
+const MAX_LINES = 40
 const LENGTHS = { to: 24, name: 24, note: 80 }
 const PREFIX = '/4u/'
 
 // Treats travel inside the link itself, so no server is needed. The order is packed into one line:
 //
-//   ur2-12 ⏎ Bea ⏎ Nino ⏎ Enjoy mo 'to!
-//   │  │      │     │      └ note (optional)
-//   │  │      │     └─────── from (optional)
-//   │  │      └───────────── for (optional)
-//   │  └──────────────────── milk + sweetness indexes, only when not the default
-//   └─────────────────────── one letter per item, then the quantity when it's more than 1
+//   u:111r2 ⏎ Bea ⏎ Nino ⏎ Enjoy mo 'to!
+//   │ │  │     │     │      └ note (optional)
+//   │ │  │     │     └─────── from (optional)
+//   │ │  │     └───────────── for (optional)
+//   │ │  └─────────────────── next line: 2 revel bars
+//   │ └────────────────────── a drink's milk, sweetness and size indexes, only when not its defaults
+//   └──────────────────────── one letter per item, then the quantity when it's more than 1
+//
+// Older links put one milk + sweetness pair for the whole order at the end (`ur2-12`). They still open:
+// the pair goes on every drink that can take it.
 //
 // then scrambled and base64url-encoded, so the link is just /4u/<code> and the surprise (and the
 // note) can't be read off the link. It's a scramble, not encryption: anyone determined can decode it.
@@ -22,7 +27,6 @@ const KEY = new TextEncoder().encode('matcha corner 4u')
 const SEP = '\n'
 
 const findByCode = (code) => menu.find((d) => d.code === code)
-const findById = (id) => menu.find((d) => d.id === id)
 
 // XOR with KEY is its own inverse, so the same function scrambles and unscrambles.
 const scramble = (bytes) => bytes.map((b, i) => b ^ KEY[i % KEY.length])
@@ -40,12 +44,31 @@ const fromCode = (code) => {
 
 const clean = (text, max) => (text ?? '').replace(/\s+/g, ' ').trim().slice(0, max)
 
-export const orderTotal = (lines) => lines.reduce((sum, [id, qty]) => sum + qty * findById(id).price, 0)
+export const orderTotal = (lines) => lines.reduce((sum, line) => sum + linePrice(line), 0)
+
+const encodeLine = (line) => {
+  let text = menu.find((d) => d.id === line.id).code + (line.qty > 1 ? line.qty : '')
+  if (lineKey(line) !== lineKey({ id: line.id, ...defaultOptions(line.id) })) {
+    // A drink with no milk choice stores 0; it's ignored when read back.
+    const milk = Math.max(0, milks.indexOf(line.milk))
+    text += `:${milk}${sweetness.indexOf(line.sugar)}${sizes.findIndex((s) => s.name === line.size)}`
+  }
+  return text
+}
+
+// Index digits come from a link someone could have edited, so anything unknown falls back to the default.
+const optionsFrom = (id, milk, sugar, size) => {
+  const base = defaultOptions(id)
+  if (!isDrink(id)) return base
+  return {
+    milk: milksFor(id).includes(milks[milk]) ? milks[milk] : base.milk,
+    sugar: sweetness[sugar] ?? base.sugar,
+    size: sizes[size]?.name ?? base.size,
+  }
+}
 
 export function shareUrl(order) {
-  let items = order.lines.map(([id, qty]) => findById(id).code + (qty > 1 ? qty : '')).join('')
-  if (order.milk !== DEFAULT_MILK || order.sugar !== DEFAULT_SUGAR)
-    items += `-${milks.indexOf(order.milk)}${sweetness.indexOf(order.sugar)}`
+  const items = order.lines.map(encodeLine).join('')
 
   const fields = [items, clean(order.to, LENGTHS.to), clean(order.name, LENGTHS.name), clean(order.note, LENGTHS.note)]
   while (fields.at(-1) === '') fields.pop()
@@ -65,14 +88,20 @@ export function readSharedOrder(path = window.location.pathname) {
   }
 
   const [items = '', to, name, note] = text.split(SEP)
-  const match = /^((?:[a-z]\d{0,2})+)(?:-(\d)(\d))?$/.exec(items)
+  // Lines, then the old order-wide milk + sweetness pair.
+  const match = /^((?:[a-z]\d{0,2}(?::\d{3})?)+)(?:-(\d)(\d))?$/.exec(items)
   if (!match) return null
+  const [, body, oldMilk, oldSugar] = match
 
   const lines = []
-  for (const [, code, count] of match[1].matchAll(/([a-z])(\d{0,2})/g)) {
+  for (const [, code, count, opts] of body.matchAll(/([a-z])(\d{0,2})(?::(\d{3}))?/g)) {
     const item = findByCode(code)
     const qty = count ? Number(count) : 1
-    if (item && qty > 0 && qty <= MAX_QTY && !lines.some(([id]) => id === item.id)) lines.push([item.id, qty])
+    if (!item || qty < 1 || qty > MAX_QTY || lines.length >= MAX_LINES) continue
+    const [milk, sugar, size] = opts ? [...opts].map(Number) : [oldMilk ?? 0, oldSugar ?? -1, 0].map(Number)
+    const line = { id: item.id, qty, ...optionsFrom(item.id, milk, sugar, size) }
+    // The same thing twice (only possible in an edited link) is skipped rather than merged past MAX_QTY.
+    if (!lines.some((l) => lineKey(l) === lineKey(line))) lines.push(line)
   }
   if (lines.length === 0) return null
 
@@ -82,8 +111,6 @@ export function readSharedOrder(path = window.location.pathname) {
     note: clean(note, LENGTHS.note),
     no: 0,
     lines,
-    milk: milks[match[2]] ?? DEFAULT_MILK,
-    sugar: sweetness[match[3]] ?? DEFAULT_SUGAR,
     total: orderTotal(lines),
   }
 }

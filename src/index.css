@@ -161,13 +161,113 @@ body {
   padding: 0;
   list-style: none;
 }
-.lines li {
+.lines > li {
+  display: grid;
+  gap: 0.6rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 2px dashed var(--plop-line-a);
+}
+.line-row {
   display: grid;
   grid-template-columns: 2rem 1fr auto auto;
   align-items: center;
   gap: 0.5rem;
-  padding-bottom: 0.5rem;
-  border-bottom: 2px dashed var(--plop-line-a);
+}
+/* A drink's own milk, sweetness and size: a one-line summary under its name, opened with Change. */
+.line-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-left: 2.5rem;
+  font-size: 0.9rem;
+}
+.line-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+  gap: 0.6rem;
+  margin-left: 2.5rem;
+}
+.line-fixed {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 0.9rem;
+  opacity: 0.85;
+}
+
+/* Customize overlay: a taped sheet in a native <dialog>. On phones it rises from the bottom. */
+.customize {
+  width: min(28rem, calc(100% - 2rem));
+  max-height: calc(100dvh - 2rem);
+  padding: 0;
+  overflow: visible auto;
+  border: 0;
+  background: transparent;
+  color: inherit;
+}
+.customize::backdrop {
+  background: rgba(43, 90, 56, 0.35);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .customize[open] {
+    animation: customize-in 0.25s var(--plop-ease-spring, ease-out);
+  }
+}
+@keyframes customize-in {
+  from { opacity: 0; transform: translateY(1rem) scale(0.97); }
+}
+.customize-sheet {
+  padding: 1.75rem 1.5rem 1.5rem;
+}
+.customize-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.1rem;
+}
+.customize-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.customize-title {
+  margin: 0 0 0.25rem;
+  font-family: var(--plop-font-letter);
+  font-size: 1.6rem;
+  line-height: 1.1;
+}
+.customize-note,
+.customize-fixed {
+  margin: 0;
+}
+.customize-fixed {
+  font-size: 0.95rem;
+  opacity: 0.85;
+}
+.customize-extra {
+  opacity: 0.75;
+}
+.customize-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+@media (max-width: 600px) {
+  .customize {
+    width: calc(100% - 1rem);
+    max-width: none;
+    margin: auto auto 0.5rem;
+  }
+  .customize-sheet {
+    padding: 1.5rem 1.1rem calc(1.25rem + env(safe-area-inset-bottom));
+  }
+  /* Stacked, with the main action on top where the thumb is. */
+  .customize-actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
 }
 .qty {
   font-family: var(--plop-font-letter);
@@ -175,12 +275,6 @@ body {
 
 .free-line {
   color: var(--plop-berry);
-}
-
-.options {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1rem;
 }
 
 .total {
@@ -253,6 +347,19 @@ body {
 .receipt {
   margin: 0.5rem 0;
   padding-left: 1.1rem;
+}
+.receipt li + li {
+  margin-top: 0.2rem;
+}
+.receipt-detail {
+  display: block;
+  font-size: 0.85rem;
+  opacity: 0.8;
+}
+.receipt-free {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+  color: var(--plop-berry);
 }
 .receipt-total {
   margin: 0;
@@ -466,8 +573,9 @@ body {
   .tray {
     padding: 1.1rem;
   }
-  .options {
-    grid-template-columns: 1fr;
+  .line-summary,
+  .line-options {
+    margin-left: 0;
   }
   .tracker {
     margin-top: 3rem;
