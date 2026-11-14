@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import {
   Buddy,
   Button,
@@ -10,12 +10,14 @@ import {
   Heading,
   IconButton,
   LinkIcon,
+  NumberStepper,
   PlopProvider,
   Progress,
   Radio,
   RadioGroup,
   Select,
   SoundIcon,
+  StatusDot,
   StatusTimeline,
   StickyNote,
   Switch,
@@ -33,7 +35,10 @@ import {
 import Cookie from './Cookie'
 import Cup from './Cup'
 import Customize from './Customize'
+import Drawer from './Drawer'
+import Splash from './Splash'
 import StampCard from './StampCard'
+import { readLastOrder, saveLastOrder, useSavedCart } from './cart'
 import {
   defaultOptions,
   describeLine,
@@ -75,6 +80,7 @@ const stepsFor = (lines) => (hasDrinks(lines) ? drinkSteps : snackSteps)
 // Cart lines get a `uid` so React can track them while their options change.
 let nextUid = 1
 const newLine = (id, qty, options) => ({ uid: nextUid++, id, qty, ...options })
+const withUid = (line) => ({ uid: nextUid++, ...line })
 // Lines that ended up the same (e.g. split off, then changed back) become one before the order goes out.
 const mergeLines = (lines) =>
   lines.reduce((out, line) => {
@@ -86,6 +92,14 @@ const mergeLines = (lines) =>
 const sizeOptions = sizes.map((s) => ({ value: s.name, label: s.extra ? `${s.name} +${peso(s.extra)}` : s.name }))
 const sugarOptions = sweetness.map((s) => ({ value: s, label: s }))
 // Waits a frame so a section that is about to appear exists before we scroll to it.
+// The tray sits beside the menu on wide screens; below this it becomes a bottom drawer.
+const WIDE = '(min-width: 960px)'
+const watchWide = (cb) => {
+  const mq = window.matchMedia(WIDE)
+  mq.addEventListener('change', cb)
+  return () => mq.removeEventListener('change', cb)
+}
+const isWide = () => window.matchMedia(WIDE).matches
 const scrollTo = (id) =>
   requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' }))
 
@@ -110,7 +124,10 @@ function Receipt({ order }) {
       {order.kind === 'gift' ? (
         <p className="receipt-total">Paid by {order.name || 'a friend'} ♥</p>
       ) : (
-        <p className="receipt-total">{peso(order.total)}</p>
+        <p className="receipt-total">
+          <span>Total</span>
+          <strong>{peso(order.total)}</strong>
+        </p>
       )}
     </>
   )
@@ -145,12 +162,16 @@ function MenuGrid({ items, onAdd }) {
 }
 
 export default function App() {
-  const [cart, setCart] = useState([])
+  const [cart, setCart] = useSavedCart(withUid)
+  // What was ordered last time, for the one-tap "Order it again" in the empty tray.
+  const [last, setLast] = useState(readLastOrder)
   // The cart line whose options are open for changing (one at a time keeps the tray short).
   const [editing, setEditing] = useState(null)
   // The drink being customized in the overlay, before it goes in the cart.
   const [customizing, setCustomizing] = useState(null)
   const [tab, setTab] = useState('drinks')
+  const wide = useSyncExternalStore(watchWide, isWide)
+  const [cartOpen, setCartOpen] = useState(false)
   const [name, setName] = useState('')
   const [forFriend, setForFriend] = useState(false)
   const [to, setTo] = useState('')
@@ -228,6 +249,18 @@ export default function App() {
     toast.success(`${findItem(id).name} added`)
   }
   const remove = (uid) => setCart((c) => c.filter((line) => line.uid !== uid))
+  const openCart = () => (wide ? scrollTo('tray-heading') : setCartOpen(true))
+  // The same item can sit on several lines (different milk or size); together they stay under MAX_QTY.
+  const roomFor = (line) => MAX_QTY - countItems(cart.filter((l) => l.id === line.id && l.uid !== line.uid))
+  // The row unmounts, so focus goes to the tray heading instead of getting lost.
+  const removeLine = (uid) => {
+    remove(uid)
+    document.getElementById('tray-head')?.focus()
+  }
+  const orderAgain = () => {
+    setCart(last.map(withUid))
+    toast.success('Your last order is back in the tray')
+  }
   const change = (uid, patch) => setCart((c) => c.map((line) => (line.uid === uid ? { ...line, ...patch } : line)))
 
   const startAtBar = (next) => {
@@ -241,6 +274,8 @@ export default function App() {
   const placeOrder = () => {
     if (discount > 0) card.redeemFreeCup()
     const base = { no: nextOrderNo(), name: name.trim(), lines: mergeLines(lines), total, discount }
+    saveLastOrder(base.lines)
+    setLast(base.lines)
     if (forFriend) {
       startAtBar({ ...base, kind: 'treat', to: to.trim(), note: note.trim() })
       toast.success(`Treat ready! Send the link to ${to.trim() || 'your friend'}.`, { burst: 'hearts' })
@@ -250,6 +285,7 @@ export default function App() {
     }
     setCart([])
     setNote('')
+    setCartOpen(false)
     scrollTo('tracker-heading')
   }
 
@@ -317,9 +353,212 @@ export default function App() {
 
   const sipWord = orderHasDrinks ? 'Sip' : 'Bite'
 
+  const tray = (
+    <PlopProvider surface="notebook" toaster={false} className="tray" role={wide ? 'complementary' : undefined} aria-labelledby="tray-heading">
+      <div className="tray-head" id="tray-head" tabIndex={-1}>
+        <Heading level={2} id="tray-heading" scribble={false}>
+          Your order
+        </Heading>
+        {items > 0 && <Count label={plural(items, 'item')}>{items}</Count>}
+        {!wide && (
+          <IconButton
+            icon={<CloseIcon />}
+            label="Close your order"
+            size="sm"
+            variant="plain"
+            onClick={() => setCartOpen(false)}
+          />
+        )}
+      </div>
+
+      {lines.length === 0 ? (
+        <>
+          <EmptyState>Nothing here yet. Add a drink or a snack from the menu.</EmptyState>
+          {last.length > 0 && (
+            <Button variant="plain" onClick={orderAgain} className="order-again">
+              Order my last one again ({plural(countItems(last), 'item')})
+            </Button>
+          )}
+        </>
+      ) : (
+        <>
+          <ul className="lines">
+            {lines.map((line) => {
+              const item = findItem(line.id)
+              const choices = milksFor(line.id)
+              return (
+                <li key={line.uid}>
+                  <div className="line-row">
+                    <span className="line-name">{item.name}</span>
+                    <NumberStepper
+                      label={`${item.name} quantity`}
+                      hideLabel
+                      size="sm"
+                      min={1}
+                      max={roomFor(line)}
+                      value={line.qty}
+                      onValueChange={(qty) => change(line.uid, { qty })}
+                      onRemove={() => removeLine(line.uid)}
+                      removeLabel={`Remove ${item.name}`}
+                      removedMessage={`${item.name} removed`}
+                    />
+                    <span>{peso(linePrice(line))}</span>
+                  </div>
+                  {isDrink(line.id) && (
+                    <div className="line-summary">
+                      <span>
+                        {describeLine(line)}
+                        {choices.length === 0 && ' · no milk'}
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="plain"
+                        aria-expanded={editing === line.uid}
+                        aria-controls={`options-${line.uid}`}
+                        onClick={() => setEditing(editing === line.uid ? null : line.uid)}
+                      >
+                        {editing === line.uid ? 'Done' : 'Change'}
+                        <span className="sr-only"> {item.name}</span>
+                      </Button>
+                    </div>
+                  )}
+                  {isDrink(line.id) && editing === line.uid && (
+                    <div className="line-options" id={`options-${line.uid}`}>
+                      {choices.length > 1 && (
+                        <Select
+                          label="Milk"
+                          size="sm"
+                          options={choices.map((m) => ({ value: m, label: m }))}
+                          value={line.milk}
+                          onValueChange={(milk) => change(line.uid, { milk })}
+                        />
+                      )}
+                      <Select
+                        label="Sweetness"
+                        size="sm"
+                        options={sugarOptions}
+                        value={line.sugar}
+                        onValueChange={(sugar) => change(line.uid, { sugar })}
+                      />
+                      <Select
+                        label="Size"
+                        size="sm"
+                        options={sizeOptions}
+                        value={line.size}
+                        onValueChange={(size) => change(line.uid, { size })}
+                      />
+                      {choices.length === 1 && <p className="line-fixed">Always made with {choices[0].toLowerCase()}.</p>}
+                      {choices.length === 0 && <p className="line-fixed">Made without milk.</p>}
+                    </div>
+                  )}
+                </li>
+              )
+            })}
+            {discount > 0 && (
+              <li className="free-line">
+                <div className="line-row">
+                  <span className="line-name">♥ Free drink from your stamp card</span>
+                  <span />
+                  <span>−{peso(discount)}</span>
+                </div>
+              </li>
+            )}
+          </ul>
+
+          <RadioGroup
+            legend="Who's it for?"
+            value={forFriend ? 'friend' : 'me'}
+            onValueChange={(v) => setForFriend(v === 'friend')}
+          >
+            <Radio value="me" dotColor="var(--plop-mint)">
+              For me
+            </Radio>
+            <Radio value="friend" dotColor="var(--plop-bubblegum)">
+              A treat for a friend
+            </Radio>
+          </RadioGroup>
+
+          {forFriend ? (
+            <>
+              <TextField label="Friend's name" value={to} maxLength={24} onChange={(e) => setTo(e.target.value)} />
+              <TextField
+                label="From"
+                hint="Your name, so they know who it's from."
+                value={name}
+                maxLength={24}
+                autoComplete="given-name"
+                onChange={(e) => setName(e.target.value)}
+              />
+              <TextField
+                label="Little note"
+                hint="Optional. It shows on a sticky note."
+                placeholder="Para sa'yo, enjoy!"
+                value={note}
+                maxLength={80}
+                onChange={(e) => setNote(e.target.value)}
+              />
+            </>
+          ) : (
+            <TextField
+              label="Name on your order"
+              hint="Optional."
+              value={name}
+              maxLength={24}
+              autoComplete="given-name"
+              onChange={(e) => setName(e.target.value)}
+            />
+          )}
+
+          <p className="total">
+            <span>Total</span>
+            <strong>{peso(total)}</strong>
+          </p>
+          <Button size="lg" variant="mint" buddy burst onClick={placeOrder} className="place">
+            {forFriend ? 'Send treat' : 'Place order'}
+          </Button>
+        </>
+      )}
+
+      <StampCard stamps={card.stamps} freeCups={card.freeCups} />
+    </PlopProvider>
+  )
+  // One short status for the nav and the phone bar, so the order can be found from anywhere on the page.
+  const status = !order ? null : order.kind === 'treat' ? 'Treat link ready' : ready ? 'Ready!' : `${steps[step]}…`
+  const showBar = items > 0 || order !== null
+
   return (
-    <PlopProvider surface="poster" theme="light" sound={sound} className={items > 0 ? 'page has-bar' : 'page'}>
-      <header className="masthead">
+    <PlopProvider surface="poster" theme="light" sound={sound} className={showBar ? 'page has-bar' : 'page'}>
+      <Splash />
+      <nav className="topnav" aria-label="Main">
+        <a href="#top" className="topnav-brand">
+          Matcha corner
+        </a>
+        <ul>
+          <li>
+            <a href="#menu-heading">Menu</a>
+          </li>
+          <li>
+            <a
+              href="#tray-heading"
+              onClick={(e) => {
+                if (wide) return
+                e.preventDefault()
+                setCartOpen(true)
+              }}
+            >
+              Order {items > 0 && <Count size="sm" label={plural(items, 'item')}>{items}</Count>}
+            </a>
+          </li>
+          {status && (
+            <li className="topnav-status">
+              <a href="#tracker-heading">
+                <StatusDot tone={ready || order.kind === 'treat' ? 'online' : 'busy'}>{status}</StatusDot>
+              </a>
+            </li>
+          )}
+        </ul>
+      </nav>
+      <header id="top" className="masthead">
         <WordSticker tone="mint" size={72} tilt={-3} style={{ fontSize: 'clamp(40px, 11vw, 72px)' }}>
           Matcha corner
         </WordSticker>
@@ -385,153 +624,7 @@ export default function App() {
           </Tabs>
         </section>
 
-        <PlopProvider surface="notebook" toaster={false} className="tray" role="complementary" aria-labelledby="tray-heading">
-          <div className="tray-head">
-            <Heading level={2} id="tray-heading" scribble={false}>
-              Your order
-            </Heading>
-            {items > 0 && <Count label={plural(items, 'item')}>{items}</Count>}
-          </div>
-
-          {lines.length === 0 ? (
-            <EmptyState>Nothing here yet. Add a drink or a snack from the menu.</EmptyState>
-          ) : (
-            <>
-              <ul className="lines">
-                {lines.map((line) => {
-                  const item = findItem(line.id)
-                  const choices = milksFor(line.id)
-                  return (
-                    <li key={line.uid}>
-                      <div className="line-row">
-                        <span className="qty">{line.qty}×</span>
-                        <span className="line-name">{item.name}</span>
-                        <span>{peso(linePrice(line))}</span>
-                        <IconButton
-                          icon={<CloseIcon />}
-                          label={`Remove ${item.name}`}
-                          size="sm"
-                          variant="plain"
-                          onClick={() => remove(line.uid)}
-                        />
-                      </div>
-                      {isDrink(line.id) && (
-                        <div className="line-summary">
-                          <span>
-                            {describeLine(line)}
-                            {choices.length === 0 && ' · no milk'}
-                          </span>
-                          <Button
-                            size="sm"
-                            variant="plain"
-                            aria-expanded={editing === line.uid}
-                            aria-controls={`options-${line.uid}`}
-                            onClick={() => setEditing(editing === line.uid ? null : line.uid)}
-                          >
-                            {editing === line.uid ? 'Done' : 'Change'}
-                            <span className="sr-only"> {item.name}</span>
-                          </Button>
-                        </div>
-                      )}
-                      {isDrink(line.id) && editing === line.uid && (
-                        <div className="line-options" id={`options-${line.uid}`}>
-                          {choices.length > 1 && (
-                            <Select
-                              label="Milk"
-                              size="sm"
-                              options={choices.map((m) => ({ value: m, label: m }))}
-                              value={line.milk}
-                              onValueChange={(milk) => change(line.uid, { milk })}
-                            />
-                          )}
-                          <Select
-                            label="Sweetness"
-                            size="sm"
-                            options={sugarOptions}
-                            value={line.sugar}
-                            onValueChange={(sugar) => change(line.uid, { sugar })}
-                          />
-                          <Select
-                            label="Size"
-                            size="sm"
-                            options={sizeOptions}
-                            value={line.size}
-                            onValueChange={(size) => change(line.uid, { size })}
-                          />
-                          {choices.length === 1 && <p className="line-fixed">Always made with {choices[0].toLowerCase()}.</p>}
-                          {choices.length === 0 && <p className="line-fixed">Made without milk.</p>}
-                        </div>
-                      )}
-                    </li>
-                  )
-                })}
-                {discount > 0 && (
-                  <li className="free-line">
-                    <div className="line-row">
-                      <span className="qty">♥</span>
-                      <span className="line-name">Free drink from your stamp card</span>
-                      <span>−{peso(discount)}</span>
-                    </div>
-                  </li>
-                )}
-              </ul>
-
-              <RadioGroup
-                legend="Who's it for?"
-                value={forFriend ? 'friend' : 'me'}
-                onValueChange={(v) => setForFriend(v === 'friend')}
-              >
-                <Radio value="me" dotColor="var(--plop-mint)">
-                  For me
-                </Radio>
-                <Radio value="friend" dotColor="var(--plop-bubblegum)">
-                  A treat for a friend
-                </Radio>
-              </RadioGroup>
-
-              {forFriend ? (
-                <>
-                  <TextField label="Friend's name" value={to} maxLength={24} onChange={(e) => setTo(e.target.value)} />
-                  <TextField
-                    label="From"
-                    hint="Your name, so they know who it's from."
-                    value={name}
-                    maxLength={24}
-                    autoComplete="given-name"
-                    onChange={(e) => setName(e.target.value)}
-                  />
-                  <TextField
-                    label="Little note"
-                    hint="Optional. It shows on a sticky note."
-                    placeholder="Para sa'yo, enjoy!"
-                    value={note}
-                    maxLength={80}
-                    onChange={(e) => setNote(e.target.value)}
-                  />
-                </>
-              ) : (
-                <TextField
-                  label="Name on your order"
-                  hint="Optional."
-                  value={name}
-                  maxLength={24}
-                  autoComplete="given-name"
-                  onChange={(e) => setName(e.target.value)}
-                />
-              )}
-
-              <p className="total">
-                <span>Total</span>
-                <strong>{peso(total)}</strong>
-              </p>
-              <Button size="lg" variant="mint" buddy burst onClick={placeOrder} className="place">
-                {forFriend ? 'Send treat' : 'Place order'}
-              </Button>
-            </>
-          )}
-
-          <StampCard stamps={card.stamps} freeCups={card.freeCups} />
-        </PlopProvider>
+        {wide && tray}
       </main>
 
       {order?.kind === 'treat' && (
@@ -592,7 +685,7 @@ export default function App() {
             </TicketCard>
 
             <div className="progress">
-              <StatusTimeline steps={[...steps]} current={ready ? steps.length : step} label="Order progress" />
+              {!ready && <StatusTimeline steps={[...steps]} current={step} label="Order progress" />}
               <div className="barista" aria-live="polite">
                 <Buddy mood={ready ? 'congrats' : 'thinking'} size="md" />
                 <p>{ready ? 'Enjoy! Kain na.' : `${steps[step]}…`}</p>
@@ -612,64 +705,84 @@ export default function App() {
                   </Button>
                 </div>
               )}
-            </div>
-          </div>
-
-          {ready && (
-            <div className="after">
-              <div className="sip-card">
-                {orderHasDrinks ? <Cup level={1 - bites / BITES} /> : <Cookie left={1 - bites / BITES} />}
-                {finished ? (
-                  <StickyNote tone="mint" tilt={1.5} className="paper-note" footer="Your matcha fortune">
-                    <p className="note-text">{fortune}</p>
-                  </StickyNote>
-                ) : (
-                  <>
-                    <p>Tap to {sipWord.toLowerCase()}. Finish it to get a fortune and a stamp.</p>
-                    <Button variant="periwinkle" burst="hearts" onClick={bite}>
-                      {sipWord} ({BITES - bites} left)
-                    </Button>
-                  </>
-                )}
-              </div>
-
-              {finished && (
-                <div className="share">
-                  <Heading level={3} scribble={false}>
-                    {order.kind === 'gift' ? 'Pay it back?' : 'Share the love?'}
-                  </Heading>
-                  <p>
-                    {order.kind === 'gift'
-                      ? `Send ${order.name || 'your friend'} a treat back. They'll get their own link to open.`
-                      : 'Treat a friend. They get a link that opens their very own order.'}
-                  </p>
-                  <div className="share-buttons">
-                    <Button variant="mint" burst="hearts" onClick={treatBack}>
-                      {order.kind === 'gift' ? `Treat ${order.name || 'them'} back` : 'Treat a friend'}
-                    </Button>
-                    <Button variant="plain" onClick={orderAnother}>
-                      Order another
-                    </Button>
+              {ready && (
+                <div className="after">
+                  <div className="sip-card">
+                    {orderHasDrinks ? <Cup level={1 - bites / BITES} /> : <Cookie left={1 - bites / BITES} />}
+                    {finished ? (
+                      <StickyNote tone="mint" tilt={1.5} className="paper-note" footer="Your matcha fortune">
+                        <p className="note-text">{fortune}</p>
+                      </StickyNote>
+                    ) : (
+                      <>
+                        <p>Tap to {sipWord.toLowerCase()}. Finish it to get a fortune and a stamp.</p>
+                        <Button variant="periwinkle" burst="hearts" onClick={bite}>
+                          {sipWord} ({BITES - bites} left)
+                        </Button>
+                      </>
+                    )}
                   </div>
+
+                  {finished && (
+                    <div className="share">
+                      <Heading level={3} scribble={false}>
+                        {order.kind === 'gift' ? 'Pay it back?' : 'Share the love?'}
+                      </Heading>
+                      <p>
+                        {order.kind === 'gift'
+                          ? `Send ${order.name || 'your friend'} a treat back. They'll get their own link to open.`
+                          : 'Treat a friend. They get a link that opens their very own order.'}
+                      </p>
+                      <div className="share-buttons">
+                        <Button variant="mint" burst="hearts" onClick={treatBack}>
+                          {order.kind === 'gift' ? `Treat ${order.name || 'them'} back` : 'Treat a friend'}
+                        </Button>
+                        <Button variant="plain" onClick={orderAnother}>
+                          Order another
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
-          )}
+          </div>
+
         </section>
+      )}
+
+      {!wide && cartOpen && (
+        <Drawer label="Your order" onClose={() => setCartOpen(false)}>
+          {tray}
+        </Drawer>
       )}
 
       {customizing && <Customize id={customizing} onAdd={addCustomized} onClose={() => setCustomizing(null)} />}
 
       <footer className="foot">Matcha corner is a pretend café made with love and PlopUI. No real orders are placed.</footer>
 
-      {items > 0 && (
+      {showBar && (
         <div className="cart-bar">
-          <span className="cart-bar-text">
-            <strong>{plural(items, 'item')}</strong> · {peso(total)}
-          </span>
-          <Button size="sm" variant="mint" onClick={() => scrollTo('tray-heading')}>
-            View order
-          </Button>
+          {items > 0 ? (
+            <>
+              <span className="cart-bar-text">
+                <strong>{plural(items, 'item')}</strong> · {peso(total)}
+              </span>
+              <Button size="sm" variant="mint" onClick={openCart}>
+                View order
+              </Button>
+            </>
+          ) : (
+            <>
+              <span className="cart-bar-text">
+                <strong>{order.kind === 'treat' ? 'Treat' : order.kind === 'gift' ? 'Your treat' : `#${order.no}`}</strong> ·{' '}
+                {status}
+              </span>
+              <Button size="sm" variant="mint" onClick={() => scrollTo('tracker-heading')}>
+                Track
+              </Button>
+            </>
+          )}
         </div>
       )}
     </PlopProvider>

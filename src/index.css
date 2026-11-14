@@ -140,7 +140,7 @@ body {
 @media (min-width: 960px) {
   .tray {
     position: sticky;
-    top: 1.5rem;
+    top: 5.5rem;
     rotate: 0.6deg;
   }
 }
@@ -169,7 +169,7 @@ body {
 }
 .line-row {
   display: grid;
-  grid-template-columns: 2rem 1fr auto auto;
+  grid-template-columns: 1fr auto auto;
   align-items: center;
   gap: 0.5rem;
 }
@@ -269,9 +269,6 @@ body {
     align-items: stretch;
   }
 }
-.qty {
-  font-family: var(--plop-font-letter);
-}
 
 .free-line {
   color: var(--plop-berry);
@@ -362,9 +359,18 @@ body {
   color: var(--plop-berry);
 }
 .receipt-total {
-  margin: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0.75rem 0 0;
+  padding-top: 0.6rem;
+  border-top: 2px dashed var(--plop-line-a);
   font-family: var(--plop-font-letter);
-  font-size: 1.4rem;
+  font-size: 1.1rem;
+}
+.receipt-total strong {
+  font-size: 1.5rem;
 }
 .progress {
   display: grid;
@@ -396,16 +402,12 @@ body {
 }
 
 /* After the order is ready: sip, fortune, share */
+/* Sits in the right column beside the ticket: the cup, then the fortune and share once it's finished. */
 .after {
   display: grid;
-  gap: 2.5rem;
-  align-items: start;
-  margin-top: 3rem;
-}
-@media (min-width: 800px) {
-  .after {
-    grid-template-columns: 22rem 1fr;
-  }
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 2rem;
+  align-items: center;
 }
 .sip-card {
   display: grid;
@@ -590,9 +592,6 @@ body {
   .tracker {
     margin-top: 3rem;
   }
-  .after {
-    margin-top: 2rem;
-  }
   .share-buttons {
     gap: 0.75rem;
   }
@@ -602,4 +601,160 @@ body {
   margin-top: 5rem;
   font-size: 0.9rem;
   opacity: 0.8;
+}
+
+/* Splash: the café pops up with curling steam, then the whole sheet lifts away. */
+.splash {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 1rem;
+  background: var(--plop-bg-l, #F3F1E0);
+  cursor: pointer;
+}
+.splash-store {
+  max-width: 80vw;
+  height: auto;
+  animation: splash-pop 0.6s var(--plop-ease-spring, ease-out) both;
+}
+.storefront-steam {
+  animation: steam 1.6s ease-in-out infinite;
+}
+.splash-tag {
+  margin: 0;
+  font-family: var(--plop-font-letter);
+  font-size: 1.15rem;
+  animation: splash-fade 0.5s 0.5s ease-out both;
+}
+.splash.is-leaving {
+  animation: splash-out 0.45s ease-in forwards;
+}
+@keyframes splash-pop {
+  from { opacity: 0; transform: scale(0.6) rotate(-8deg); }
+}
+@keyframes steam {
+  0%, 100% { opacity: 0.4; transform: translateY(2px); }
+  50% { opacity: 1; transform: translateY(-3px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .storefront-steam { animation: none; }
+}
+@keyframes splash-fade {
+  from { opacity: 0; }
+}
+@keyframes splash-out {
+  to { opacity: 0; transform: translateY(-3rem); visibility: hidden; }
+}
+
+/* Top nav: sticky on every screen, so the menu, the tray and a live order are one tap away. */
+html {
+  scroll-padding-top: 6rem;
+}
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+.topnav {
+  position: sticky;
+  z-index: 30;
+  top: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding: 0.4rem 0.5rem 0.4rem 1.1rem;
+  border: 3px solid var(--plop-ink);
+  border-radius: 999px;
+  background: var(--plop-paper);
+  box-shadow: 4px 5px 0 var(--plop-shadow);
+  font-family: var(--plop-font-letter);
+}
+.topnav ul {
+  display: flex;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.topnav a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2.75rem;
+  padding: 0 0.85rem;
+  border-radius: 999px;
+  color: var(--plop-ink-text);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.topnav a:hover {
+  background: var(--plop-line-b-l);
+}
+.topnav a:focus-visible {
+  outline: 3px solid var(--plop-focus-l);
+  outline-offset: 2px;
+}
+.topnav-brand {
+  font-size: 1.25rem;
+}
+.topnav .topnav-brand {
+  padding-left: 0;
+}
+@media (max-width: 600px) {
+  .topnav {
+    padding-left: 0.5rem;
+  }
+  /* The bottom bar shows the order status on phones. */
+  .topnav .topnav-brand,
+  .topnav-status {
+    display: none;
+  }
+  .topnav ul {
+    flex: 1;
+    justify-content: space-around;
+  }
+  .topnav a {
+    padding: 0 0.6rem;
+  }
+}
+
+.order-again {
+  justify-self: center;
+}
+.tray-head:focus {
+  outline: none;
+}
+
+/* Cart drawer on phones and tablets: the tray rises from the bottom, about half the screen. */
+.drawer {
+  width: min(40rem, 100%);
+  max-width: none;
+  max-height: min(75dvh, 46rem);
+  margin: auto auto 0;
+  padding: 0;
+  overflow: visible auto;
+  border: 0;
+  background: transparent;
+  color: inherit;
+}
+.drawer::backdrop {
+  background: rgba(43, 90, 56, 0.35);
+}
+.drawer .tray {
+  padding-bottom: calc(1.5rem + env(safe-area-inset-bottom));
+  border-radius: var(--plop-radius-box) var(--plop-radius-box) 0 0;
+  box-shadow: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .drawer[open] {
+    animation: drawer-up 0.3s var(--plop-ease-spring, ease-out);
+  }
+}
+@keyframes drawer-up {
+  from { transform: translateY(100%); }
 }
